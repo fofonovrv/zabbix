@@ -1,0 +1,108 @@
+version: '3.4'
+
+services:
+  zabbix-server:
+    container_name: zabbix-server
+    image: zabbix/zabbix-server-mysql:alpine-latest
+    networks:
+      - network
+    environment:
+      DB_SERVER_HOST: "zabbix-db"
+      MYSQL_USER: "zabbix"
+      MYSQL_PASSWORD: "zabbix"
+      MYSQL_DATABASE: "zabbix"
+      TZ: "Europe/Moscow"
+      ZBX_SERVER_NAME: "Zabbix"
+      ZBX_JAVAGATEWAY: "zabbix-java-gateway"
+      ZBX_DBTLSCONNECT: "required"
+    volumes:
+      - ./alertscripts:/usr/lib/zabbix/alertscripts
+    ports:
+      - 10051:10051
+    depends_on:
+      - zabbix-db
+      - zabbix-java-gateway
+    restart: unless-stopped
+
+  zabbix-db:
+    container_name: zabbix-db
+    image: mysql:5.7
+    networks:
+      - network
+    command: mysqld --character-set-server=utf8 --collation-server=utf8_bin
+    environment:
+      MYSQL_ROOT_PASSWORD: "123-Qaz!"
+      MYSQL_USER: "zabbix"
+      MYSQL_PASSWORD: "zabbix"
+      MYSQL_DATABASE: "zabbix"
+    volumes:
+      - ./db:/var/lib/mysql
+    restart: unless-stopped
+
+  zabbix-java-gateway:
+    container_name: zabbix-java-gateway
+    image: zabbix/zabbix-java-gateway:latest
+    networks:
+      - network
+    ports:
+      - 10052:10052
+    restart: unless-stopped
+
+  zabbix-web:
+    container_name: zabbix-web
+    image: zabbix/zabbix-web-nginx-mysql:latest
+    networks:
+      - network
+    ports:
+      - 80:8080
+    environment:
+      DB_SERVER_HOST: "zabbix-db"
+      ZBX_DB_ENCRYPTION: "true"
+      MYSQL_USER: "zabbix"
+      MYSQL_PASSWORD: "zabbix"
+      MYSQL_DATABASE: "zabbix"
+
+    depends_on:
+      - zabbix-db
+      - zabbix-java-gateway
+      - zabbix-server
+    restart: unless-stopped
+
+  zabbix-grafana:
+    container_name: zabbix-grafana
+    image: grafana/grafana
+    networks:
+      - network
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    environment:
+      GF_INSTALL_PLUGINS: "alexanderzobnin-zabbix-app"
+      HTTP_PROXY: "http://10.81.193.30:8081"
+      HTTPS_PROXY: "http://10.81.193.30:8081"
+    depends_on:
+      - zabbix-db
+      - zabbix-server
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      #- ./grafana/plugins:/var/lib/grafana/plugins
+
+  zabbix-agent:
+    container_name: zabbix-agent
+    image: zabbix/zabbix-agent2:alpine-5.0.1
+    user: root
+    networks:
+      - network
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /var/run:/var/run
+    ports:
+      - 10050:10050
+    environment:
+      ZBX_HOSTNAME: "serv-zabbix"
+      ZBX_SERVER_HOST: "zabbix-server"
+
+networks:
+  network:
+    driver: bridge
